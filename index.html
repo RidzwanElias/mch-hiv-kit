@@ -1,0 +1,911 @@
+# mch-hiv-kit
+Dashboard Interaktif 
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Pemantauan Kit HIV & Syphilis | Unit HIV/STI/Hep C</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Header / Navbar -->
+    <header class="bg-gradient-to-r from-red-800 via-rose-700 to-red-900 text-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div class="flex items-center space-x-3">
+                    <div class="bg-white/10 p-2.5 rounded-xl backdrop-blur-md border border-white/20">
+                        <i class="fa-solid fa-ribbon text-2xl text-red-200"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold leading-tight">SISTEM PEMANTAUAN STOK KIT HIV & SYPHILIS</h1>
+                        <p class="text-xs text-red-100 flex items-center gap-2">
+                            <span><i class="fa-solid fa-user-doctor mr-1"></i> Ketua Unit HIV, STI & Hepatitis C</span>
+                            <span>•</span>
+                            <span>PEJABAT KESIHATAN KEPONG</span>
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Quick Stats Badge & Refresh -->
+                <div class="flex items-center gap-3">
+                    <button id="btnRefresh" onclick="loadCSVData()" class="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-2 rounded-lg backdrop-blur-md border border-white/20 transition flex items-center gap-2">
+                        <i class="fa-solid fa-rotate" id="refreshIcon"></i>
+                        <span>Muat Semula Data</span>
+                    </button>
+                    <div class="text-right bg-black/20 px-3 py-1.5 rounded-lg border border-white/10 text-xs">
+                        <span class="block text-red-200 font-medium text-[10px] uppercase tracking-wider">Status Data</span>
+                        <span id="lastUpdated" class="font-semibold text-white">Memuat naik...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Banner Makluman & Penapis (Filters) -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-4 justify-between items-center">
+            <!-- Penapis (Filters) -->
+            <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-filter text-slate-400 text-sm"></i>
+                    <span class="text-xs font-semibold text-slate-600">Tapis:</span>
+                </div>
+                
+                <!-- Filter Klinik -->
+                <select id="filterKlinik" onchange="applyFilters()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-red-500 focus:outline-none">
+                    <option value="ALL">Semua Klinik / Fasiliti</option>
+                </select>
+
+                <!-- Filter Jenis Kit -->
+                <select id="filterKit" onchange="applyFilters()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-red-500 focus:outline-none">
+                    <option value="ALL">Semua Jenis Kit</option>
+                </select>
+
+                <!-- Filter Bulan -->
+                <select id="filterBulan" onchange="applyFilters()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-red-500 focus:outline-none">
+                    <option value="ALL">Semua Bulan</option>
+                </select>
+            </div>
+
+            <!-- Reset Filter Button -->
+            <button onclick="resetFilters()" class="text-xs text-red-600 hover:text-red-800 font-medium flex items-center gap-1 self-end md:self-auto">
+                <i class="fa-solid fa-arrow-rotate-left"></i> Set Semula Penapis
+            </button>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loadingState" class="py-16 text-center bg-white rounded-xl shadow-sm border border-slate-200">
+            <i class="fa-solid fa-circle-notch fa-spin text-4xl text-red-600 mb-3"></i>
+            <p class="text-sm font-semibold text-slate-600">Sedang mengambil data terkini daripada Google Sheets...</p>
+            <p class="text-xs text-slate-400 mt-1">Sila tunggu sebentar.</p>
+        </div>
+
+        <!-- Error Alert State -->
+        <div id="errorState" class="hidden p-6 bg-red-50 border border-red-200 rounded-xl text-center">
+            <i class="fa-solid fa-triangle-exclamation text-3xl text-red-600 mb-2"></i>
+            <h3 class="text-sm font-bold text-red-800">Gagal Memuatkan Data</h3>
+            <p class="text-xs text-red-600 mt-1" id="errorMessage">Terdapat masalah semasa membaca link Google Sheets CSV.</p>
+            <button onclick="loadCSVData()" class="mt-4 text-xs bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-lg">Cuba Lagi</button>
+        </div>
+
+        <!-- Dashboard Analytics Grid (Hidden when loading) -->
+        <div id="dashboardContent" class="space-y-6 hidden">
+            
+            <!-- Key Metrics Cards (5 KPI Cards for better segregation) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                
+                <!-- Total Penerimaan / Stok Masuk -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Jumlah Stok Diterima</p>
+                            <h2 class="text-2xl font-bold text-slate-800 mt-1" id="kpiDiterima">0</h2>
+                            <p class="text-[11px] text-slate-400 mt-1">Keseluruhan Kit</p>
+                        </div>
+                        <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-boxes-stacked"></i>
+                        </div>
+                    </div>
+                    <div class="absolute bottom-0 left-0 right-0 h-1 bg-blue-500"></div>
+                </div>
+
+                <!-- Penggunaan Kit HIV -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-semibold text-rose-600 uppercase tracking-wider">Penggunaan HIV</p>
+                            <h2 class="text-2xl font-bold text-rose-700 mt-1" id="kpiPenggunaanHIV">0</h2>
+                            <p class="text-[11px] text-slate-500 mt-1" id="kpiPctHIV">0% daripada penggunaan</p>
+                        </div>
+                        <div class="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-ribbon"></i>
+                        </div>
+                    </div>
+                    <div class="absolute bottom-0 left-0 right-0 h-1 bg-rose-500"></div>
+                </div>
+
+                <!-- Penggunaan Kit Syphilis -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-semibold text-indigo-600 uppercase tracking-wider">Penggunaan Syphilis</p>
+                            <h2 class="text-2xl font-bold text-indigo-700 mt-1" id="kpiPenggunaanSyphilis">0</h2>
+                            <p class="text-[11px] text-slate-500 mt-1" id="kpiPctSyphilis">0% daripada penggunaan</p>
+                        </div>
+                        <div class="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-vial"></i>
+                        </div>
+                    </div>
+                    <div class="absolute bottom-0 left-0 right-0 h-1 bg-indigo-500"></div>
+                </div>
+
+                <!-- Baki Semasa -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Jumlah Baki Semasa</p>
+                            <h2 class="text-2xl font-bold text-slate-800 mt-1" id="kpiBaki">0</h2>
+                            <p class="text-[11px] text-emerald-600 font-medium mt-1 flex items-center gap-1" id="kpiPenggunaanRate">
+                                <i class="fa-solid fa-chart-line"></i> 0% Guna
+                            </p>
+                        </div>
+                        <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-warehouse"></i>
+                        </div>
+                    </div>
+                    <div class="absolute bottom-0 left-0 right-0 h-1 bg-emerald-500"></div>
+                </div>
+
+                <!-- Amaran Baki Rendah / Klinik Terlibat -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Klinik Berdaftar</p>
+                            <h2 class="text-2xl font-bold text-slate-800 mt-1" id="kpiJumlahKlinik">0</h2>
+                            <p class="text-[11px] text-rose-600 font-medium mt-1" id="kpiKlinikKritikal">
+                                <i class="fa-solid fa-circle-exclamation"></i> 0 Amaran Stok Low
+                            </p>
+                        </div>
+                        <div class="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-clinic-medical"></i>
+                        </div>
+                    </div>
+                    <div class="absolute bottom-0 left-0 right-0 h-1 bg-amber-500"></div>
+                </div>
+
+            </div>
+
+            <!-- Charts Section 1: Penggunaan Bulanan & Perbandingan Kit -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Monthly Trend Chart (2 Cols) -->
+                <div class="lg:col-span-2 bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">Trend Penggunaan Kit Mengikut Bulan (HIV vs Syphilis)</h3>
+                            <p class="text-xs text-slate-500">Pemantauan bulanan bilangan kit HIV & Syphilis digunakan di lapangan</p>
+                        </div>
+                        <span class="text-xs bg-slate-100 text-slate-600 font-medium px-2.5 py-1 rounded-full">Graf Garisan (Linear)</span>
+                    </div>
+                    <div class="relative w-full h-72">
+                        <canvas id="monthlyChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Kit Distribution Pie Chart (1 Col) -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">Pecahan Mengikut Kit</h3>
+                            <p class="text-xs text-slate-500">Penggunaan Kit HIV vs Syphilis</p>
+                        </div>
+                        <span class="text-xs bg-slate-100 text-slate-600 font-medium px-2.5 py-1 rounded-full">Doughnut</span>
+                    </div>
+                    <div class="relative w-full h-72 flex items-center justify-center">
+                        <canvas id="kitPieChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Section 2: Penggunaan Mengikut Klinik -->
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">Penggunaan & Baki Stok Mengikut Klinik (HIV vs Syphilis)</h3>
+                        <p class="text-xs text-slate-500">Perbandingan peratusan dan kuantiti kit digunakan serta baki stok bagi HIV dan Syphilis mengikut fasiliti</p>
+                    </div>
+                    <div class="text-xs text-slate-400">
+                        <i class="fa-solid fa-info-circle mr-1"></i> Berdasarkan lajur 'Bilangan di gunakan' & Baki Semasa
+                    </div>
+                </div>
+                <div class="relative w-full h-80">
+                    <canvas id="clinicBarChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Detailed Data Table Section -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">Ringkasan Data Stok & Penggunaan Kit Fasiliti</h3>
+                        <p class="text-xs text-slate-500">Jadual terperinci rekod inventori dan penggunaan kit mengikut klinik</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="relative">
+                            <i class="fa-solid fa-search absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                            <input type="text" id="searchInput" onkeyup="searchTable()" placeholder="Cari klinik/kit..." class="text-xs pl-8 pr-3 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 w-48 sm:w-64">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto custom-scrollbar max-h-[450px]">
+                    <table class="w-full text-left text-xs text-slate-600">
+                        <thead class="bg-slate-100 text-slate-700 font-semibold sticky top-0 uppercase tracking-wider border-b border-slate-200 z-10">
+                            <tr>
+                                <th class="py-3 px-4">Klinik / Fasiliti</th>
+                                <th class="py-3 px-4">Jenis Kit / Item</th>
+                                <th class="py-3 px-4">Bulan / Tarikh</th>
+                                <th class="py-3 px-4 text-center">Stok Diterima</th>
+                                <th class="py-3 px-4 text-center">Bilangan Digunakan</th>
+                                <th class="py-3 px-4 text-center">Baki Semasa</th>
+                                <th class="py-3 px-4 text-center">Status Stok</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTableBody" class="divide-y divide-slate-200 bg-white">
+                            <!-- Rows dynamically populated -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500">
+                    <span id="rowCountInfo">Menunjukkan 0 rekod</span>
+                    <span class="italic text-[11px] text-slate-400">Nota: Status 'Kritikal' menandakan baki kurang daripada 20% stok terima.</span>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-slate-900 text-slate-400 text-xs py-6 border-t border-slate-800 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 text-center space-y-2">
+            <p class="font-medium text-slate-300">Unit HIV, STI & Hepatitis C — PEJABAT KESIHATAN KEPONG</p>
+            <p class="text-slate-500 text-[11px]">Sistem Pemantauan Digital Kit Ujian Pantas (POC) Saringan HIV & Syphilis</p>
+        </div>
+    </footer>
+
+    <!-- JavaScript logic -->
+    <script>
+        // Source CSV URL with specific sheet tab (gid=1299052091)
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRxBdWLChEqoDXp1-A0HyjrhiSZ0cKRBf7Nh0HCdKWqSrX-gQe0nhV-DYB-PFncfoUp1TjtDZ7ABnLY/pub?gid=1299052091&single=true&output=csv';
+
+        let rawData = [];
+        let filteredData = [];
+        
+        // Chart instances
+        let monthlyChartInstance = null;
+        let kitPieChartInstance = null;
+        let clinicBarChartInstance = null;
+
+        // Auto Load Data on Page Load
+        window.onload = function() {
+            loadCSVData();
+        };
+
+        // Fetch & Parse CSV Data
+        function loadCSVData() {
+            const loadingState = document.getElementById('loadingState');
+            const dashboardContent = document.getElementById('dashboardContent');
+            const errorState = document.getElementById('errorState');
+            const refreshIcon = document.getElementById('refreshIcon');
+
+            refreshIcon.classList.add('fa-spin');
+            loadingState.classList.remove('hidden');
+            dashboardContent.classList.add('hidden');
+            errorState.classList.add('hidden');
+
+            Papa.parse(CSV_URL, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    refreshIcon.classList.remove('fa-spin');
+                    if (results.data && results.data.length > 0) {
+                        rawData = processRawData(results.data);
+                        filteredData = [...rawData];
+
+                        populateDropdowns();
+                        updateDashboard();
+
+                        loadingState.classList.add('hidden');
+                        dashboardContent.classList.remove('hidden');
+
+                        const now = new Date();
+                        document.getElementById('lastUpdated').innerText = now.toLocaleTimeString('ms-MY', { hour: '2-digit', minute: '2-digit' }) + ', ' + now.toLocaleDateString('ms-MY');
+                    } else {
+                        showError("Data kosong atau format CSV tidak sepadan.");
+                    }
+                },
+                error: function(err) {
+                    refreshIcon.classList.remove('fa-spin');
+                    showError("Terdapat ralat semasa memuat turun CSV: " + err.message);
+                }
+            });
+        }
+
+        function showError(msg) {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('dashboardContent').classList.add('hidden');
+            document.getElementById('errorState').classList.remove('hidden');
+            document.getElementById('errorMessage').innerText = msg;
+        }
+
+        // Standardize & Normalize Data Keys regardless of CSV Headers variations
+        function processRawData(data) {
+            return data.map(item => {
+                const keys = Object.keys(item);
+                
+                // Helper to search flexible header matching
+                const getValue = (possibleHeaders) => {
+                    const matchedKey = keys.find(k => possibleHeaders.some(h => k.toLowerCase().trim() === h.toLowerCase().trim() || k.toLowerCase().replace(/[^a-z0-0]/g, '').includes(h.toLowerCase().replace(/[^a-z0-0]/g, ''))));
+                    return matchedKey ? item[matchedKey] : '';
+                };
+
+                // Parsing key columns flexible matching
+                const klinik = getValue(['klinik', 'fasiliti', 'nama klinik', 'lokasi', 'facility', 'kk']) || 'Klinik / Fasiliti Tidak Ditentukan';
+                const kit = getValue(['kit', 'jenis kit', 'nama kit', 'ujian', 'item', 'type']) || 'Kit HIV/Syphilis';
+                let bulanRaw = getValue(['bulan', 'tarikh', 'month', 'tarikh penerimaan', 'date']) || 'Lain-lain';
+                
+                // Formatter/Extractor: Pastikan format menjadi Bulan sahaja (contoh: Jan, Feb, Mac atau Januari, Februari)
+                let bulanFormatted = formatToMonthOnly(bulanRaw);
+
+                // Parsing Numbers
+                const parseNum = (val) => {
+                    if (!val) return 0;
+                    const cleaned = String(val).replace(/,/g, '').replace(/[^0-9.-]/g, '');
+                    const parsed = parseFloat(cleaned);
+                    return isNaN(parsed) ? 0 : parsed;
+                };
+
+                const diterima = parseNum(getValue(['stok diterima', 'diterima', 'jumlah diterima', 'terima', 'stok masuk', 'received']));
+                
+                // CRITICAL: Explicitly targets "Bilangan di gunakan" in sheet
+                const guna = parseNum(getValue([
+                    'bilangan di gunakan', 
+                    'bilangan digunakan', 
+                    'digunakan', 
+                    'penggunaan', 
+                    'bilangan guna', 
+                    'stok digunakan', 
+                    'used',
+                    'bil guna'
+                ]));
+                
+                let baki = parseNum(getValue(['baki semasa', 'baki', 'baki stok', 'balance', 'stok fizikal']));
+
+                // If baki column is missing or calculated 0 while received & used exists
+                if (baki === 0 && (diterima > 0 || guna > 0)) {
+                    baki = Math.max(0, diterima - guna);
+                }
+
+                return {
+                    klinik: klinik.trim(),
+                    kit: kit.trim(),
+                    bulan: bulanFormatted.trim(),
+                    diterima: diterima,
+                    guna: guna, // "Bilangan di gunakan"
+                    baki: baki
+                };
+            }).filter(row => row.klinik !== 'Klinik / Fasiliti Tidak Ditentukan' || row.diterima > 0 || row.guna > 0);
+        }
+
+        // Helper function to turn dates/strings into Month names
+        function formatToMonthOnly(val) {
+            if (!val || val.trim() === '') return 'Lain-lain';
+            const str = val.trim();
+
+            const monthMap = {
+                '01': 'Januari', '1': 'Januari', 'jan': 'Januari', 'january': 'Januari', 'januari': 'Januari',
+                '02': 'Februari', '2': 'Februari', 'feb': 'Februari', 'february': 'Februari', 'februari': 'Februari',
+                '03': 'Mac', '3': 'Mac', 'mar': 'Mac', 'march': 'Mac', 'mac': 'Mac',
+                '04': 'April', '4': 'April', 'apr': 'April', 'april': 'April',
+                '05': 'Mei', '5': 'Mei', 'may': 'Mei', 'mei': 'Mei',
+                '06': 'Jun', '6': 'Jun', 'jun': 'Jun', 'june': 'Jun',
+                '07': 'Julai', '7': 'Julai', 'jul': 'Julai', 'july': 'Julai', 'julai': 'Julai',
+                '08': 'Ogos', '8': 'Ogos', 'aug': 'Ogos', 'august': 'Ogos', 'ogos': 'Ogos',
+                '09': 'September', '9': 'September', 'sep': 'September', 'sept': 'September', 'september': 'September',
+                '10': 'Oktober', 'oct': 'Oktober', 'october': 'Oktober', 'oktober': 'Oktober',
+                '11': 'November', 'nov': 'November', 'november': 'November',
+                '12': 'Disember', 'dec': 'Disember', 'december': 'Disember', 'disember': 'Disember'
+            };
+
+            // Jika tarikh format YYYY-MM-DD atau DD/MM/YYYY
+            if (str.includes('/') || str.includes('-')) {
+                const parts = str.split(/[\/\-]/);
+                // Semak jika bahagian tengah/tepi ada nombor bulan
+                for (let p of parts) {
+                    const cleanP = p.trim().toLowerCase();
+                    if (monthMap[cleanP]) {
+                        return monthMap[cleanP];
+                    }
+                }
+            }
+
+            // Semak perkataan terus
+            const lowerStr = str.toLowerCase();
+            for (let key in monthMap) {
+                if (lowerStr.includes(key) && isNaN(key)) {
+                    return monthMap[key];
+                }
+            }
+
+            return str; // Kembalikan nilai asal sekiranya sudah dalam format nama bulan
+        }
+
+        // Populate Dropdowns Dynamically
+        function populateDropdowns() {
+            const klinikSelect = document.getElementById('filterKlinik');
+            const kitSelect = document.getElementById('filterKit');
+            const bulanSelect = document.getElementById('filterBulan');
+
+            // Unique values
+            const kliniks = [...new Set(rawData.map(d => d.klinik))].sort();
+            const kits = [...new Set(rawData.map(d => d.kit))].sort();
+            const bulans = [...new Set(rawData.map(d => d.bulan))].sort();
+
+            // Populate Klinik
+            klinikSelect.innerHTML = '<option value="ALL">Semua Klinik / Fasiliti</option>';
+            kliniks.forEach(k => {
+                klinikSelect.innerHTML += `<option value="${k}">${k}</option>`;
+            });
+
+            // Populate Kit
+            kitSelect.innerHTML = '<option value="ALL">Semua Jenis Kit</option>';
+            kits.forEach(k => {
+                kitSelect.innerHTML += `<option value="${k}">${k}</option>`;
+            });
+
+            // Populate Bulan
+            bulanSelect.innerHTML = '<option value="ALL">Semua Bulan</option>';
+            bulans.forEach(b => {
+                bulanSelect.innerHTML += `<option value="${b}">${b}</option>`;
+            });
+        }
+
+        // Apply Selected Filters
+        function applyFilters() {
+            const selectedKlinik = document.getElementById('filterKlinik').value;
+            const selectedKit = document.getElementById('filterKit').value;
+            const selectedBulan = document.getElementById('filterBulan').value;
+
+            filteredData = rawData.filter(d => {
+                const matchKlinik = (selectedKlinik === 'ALL' || d.klinik === selectedKlinik);
+                const matchKit = (selectedKit === 'ALL' || d.kit === selectedKit);
+                const matchBulan = (selectedBulan === 'ALL' || d.bulan === selectedBulan);
+                return matchKlinik && matchKit && matchBulan;
+            });
+
+            updateDashboard();
+        }
+
+        function resetFilters() {
+            document.getElementById('filterKlinik').value = 'ALL';
+            document.getElementById('filterKit').value = 'ALL';
+            document.getElementById('filterBulan').value = 'ALL';
+            document.getElementById('searchInput').value = '';
+            filteredData = [...rawData];
+            updateDashboard();
+        }
+
+        // Update All Analytics components
+        function updateDashboard() {
+            updateKPIs();
+            renderMonthlyChart();
+            renderKitPieChart();
+            renderClinicBarChart();
+            renderTable();
+        }
+
+        // Update Cards KPI
+        function updateKPIs() {
+            const totalDiterima = filteredData.reduce((acc, curr) => acc + curr.diterima, 0);
+            const totalPenggunaan = filteredData.reduce((acc, curr) => acc + curr.guna, 0); // "Bilangan di gunakan"
+            const totalBaki = filteredData.reduce((acc, curr) => acc + curr.baki, 0);
+            
+            // Penggunaan Mengikut Jenis Kit (HIV vs Syphilis)
+            let penggunaanHIV = 0;
+            let penggunaanSyphilis = 0;
+
+            filteredData.forEach(d => {
+                const kitName = d.kit.toLowerCase();
+                if (kitName.includes('syphilis') || kitName.includes('sifilis')) {
+                    penggunaanSyphilis += d.guna;
+                } else {
+                    penggunaanHIV += d.guna;
+                }
+            });
+
+            const pctHIV = totalPenggunaan > 0 ? ((penggunaanHIV / totalPenggunaan) * 100).toFixed(1) : 0;
+            const pctSyphilis = totalPenggunaan > 0 ? ((penggunaanSyphilis / totalPenggunaan) * 100).toFixed(1) : 0;
+
+            const usageRate = totalDiterima > 0 ? ((totalPenggunaan / totalDiterima) * 100).toFixed(1) : 0;
+
+            const kliniks = [...new Set(filteredData.map(d => d.klinik))];
+            
+            // Bilangan Klinik Terlibat dengan Stok Rendah (< 20% baki)
+            let alertCount = 0;
+            filteredData.forEach(d => {
+                if (d.diterima > 0 && (d.baki / d.diterima) < 0.20) {
+                    alertCount++;
+                }
+            });
+
+            document.getElementById('kpiDiterima').innerText = totalDiterima.toLocaleString('ms-MY');
+            document.getElementById('kpiPenggunaanHIV').innerText = penggunaanHIV.toLocaleString('ms-MY');
+            document.getElementById('kpiPctHIV').innerText = `${pctHIV}% daripada penggunaan`;
+            
+            document.getElementById('kpiPenggunaanSyphilis').innerText = penggunaanSyphilis.toLocaleString('ms-MY');
+            document.getElementById('kpiPctSyphilis').innerText = `${pctSyphilis}% daripada penggunaan`;
+
+            document.getElementById('kpiBaki').innerText = totalBaki.toLocaleString('ms-MY');
+            document.getElementById('kpiPenggunaanRate').innerHTML = `<i class="fa-solid fa-chart-line"></i> ${usageRate}% Kadar Guna`;
+
+            document.getElementById('kpiJumlahKlinik').innerText = kliniks.length;
+            document.getElementById('kpiKlinikKritikal').innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> ${alertCount} Amaran Stok Low`;
+        }
+
+        // Chart 1: Trend Penggunaan Bulanan (Graf Garisan Linear HIV vs Syphilis)
+        function renderMonthlyChart() {
+            const ctx = document.getElementById('monthlyChart').getContext('2d');
+            
+            // Senarai urutan bulan untuk susunan graf yang betul
+            const monthOrder = ['Januari', 'Februari', 'Mac', 'April', 'Mei', 'Jun', 'Julai', 'Ogos', 'September', 'Oktober', 'November', 'Disember'];
+
+            // Group usage by Month and Kit Type (HIV vs Syphilis)
+            const monthlyHIV = {};
+            const monthlySyphilis = {};
+            const monthSet = new Set();
+
+            filteredData.forEach(d => {
+                const monthName = d.bulan || 'Tidak Dinyatakan';
+                monthSet.add(monthName);
+
+                if (!monthlyHIV[monthName]) monthlyHIV[monthName] = 0;
+                if (!monthlySyphilis[monthName]) monthlySyphilis[monthName] = 0;
+
+                const kitName = d.kit.toLowerCase();
+                if (kitName.includes('syphilis') || kitName.includes('sifilis')) {
+                    monthlySyphilis[monthName] += d.guna;
+                } else {
+                    // HIV / Default Combo
+                    monthlyHIV[monthName] += d.guna;
+                }
+            });
+
+            // Menyusun mengikut urutan bulan kalendar
+            let labels = Array.from(monthSet);
+            labels.sort((a, b) => {
+                let indexA = monthOrder.indexOf(a);
+                let indexB = monthOrder.indexOf(b);
+                if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                return 0;
+            });
+
+            const dataHIV = labels.map(l => monthlyHIV[l] || 0);
+            const dataSyphilis = labels.map(l => monthlySyphilis[l] || 0);
+
+            if (monthlyChartInstance) monthlyChartInstance.destroy();
+
+            monthlyChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Penggunaan HIV',
+                            data: dataHIV,
+                            borderColor: 'rgba(225, 29, 72, 1)', // Rose-600
+                            backgroundColor: 'rgba(225, 29, 72, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: 'rgba(225, 29, 72, 1)',
+                            borderWidth: 2
+                        },
+                        {
+                            label: 'Penggunaan Syphilis',
+                            data: dataSyphilis,
+                            borderColor: 'rgba(79, 70, 229, 1)', // Indigo-600
+                            backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: 'rgba(79, 70, 229, 1)',
+                            borderWidth: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { 
+                            display: true,
+                            position: 'top',
+                            labels: { boxWidth: 12, font: { size: 11 } }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    return `Bulan: ${context[0].label}`;
+                                },
+                                label: function(context) {
+                                    return ` ${context.dataset.label}: ${context.parsed.y.toLocaleString('ms-MY')} unit`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#f1f5f9' },
+                            ticks: { font: { size: 11 } }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Bulan',
+                                font: { size: 12, weight: 'bold' },
+                                color: '#64748b'
+                            },
+                            grid: { display: false },
+                            ticks: { font: { size: 11 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Chart 2: Doughnut Chart Pecahan Kit
+        function renderKitPieChart() {
+            const ctx = document.getElementById('kitPieChart').getContext('2d');
+            
+            // Group usage by Kit Type
+            const kitData = {};
+            filteredData.forEach(d => {
+                const kitName = d.kit || 'Kit Saringan';
+                if (!kitData[kitName]) kitData[kitName] = 0;
+                kitData[kitName] += d.guna; // "Bilangan di gunakan"
+            });
+
+            const labels = Object.keys(kitData);
+            const dataValues = Object.values(kitData);
+
+            if (kitPieChartInstance) kitPieChartInstance.destroy();
+
+            kitPieChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: dataValues,
+                        backgroundColor: [
+                            'rgba(225, 29, 72, 0.85)',
+                            'rgba(79, 70, 229, 0.85)',
+                            'rgba(16, 185, 129, 0.85)',
+                            'rgba(245, 158, 11, 0.85)',
+                            'rgba(14, 165, 233, 0.85)'
+                        ],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return ` ${context.label}: ${context.parsed.toLocaleString('ms-MY')} unit`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Chart 3: Penggunaan & Baki Mengikut Klinik (Asingkan HIV & Syphilis)
+        function renderClinicBarChart() {
+            const ctx = document.getElementById('clinicBarChart').getContext('2d');
+            
+            // Grouping by Clinic for HIV and Syphilis separately
+            const clinicSummary = {};
+            filteredData.forEach(d => {
+                if (!clinicSummary[d.klinik]) {
+                    clinicSummary[d.klinik] = { 
+                        gunaHIV: 0, 
+                        bakiHIV: 0, 
+                        gunaSyphilis: 0, 
+                        bakiSyphilis: 0 
+                    };
+                }
+
+                const kitName = d.kit.toLowerCase();
+                if (kitName.includes('syphilis') || kitName.includes('sifilis')) {
+                    clinicSummary[d.klinik].gunaSyphilis += d.guna;
+                    clinicSummary[d.klinik].bakiSyphilis += d.baki;
+                } else {
+                    // HIV or Default Combo
+                    clinicSummary[d.klinik].gunaHIV += d.guna;
+                    clinicSummary[d.klinik].bakiHIV += d.baki;
+                }
+            });
+
+            // Limit top 12-15 clinics for clean rendering
+            const labels = Object.keys(clinicSummary).slice(0, 15);
+            
+            const gunaHIVValues = labels.map(k => clinicSummary[k].gunaHIV);
+            const gunaSyphilisValues = labels.map(k => clinicSummary[k].gunaSyphilis);
+            const bakiHIVValues = labels.map(k => clinicSummary[k].bakiHIV);
+            const bakiSyphilisValues = labels.map(k => clinicSummary[k].bakiSyphilis);
+
+            if (clinicBarChartInstance) clinicBarChartInstance.destroy();
+
+            clinicBarChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Penggunaan HIV',
+                            data: gunaHIVValues,
+                            backgroundColor: 'rgba(225, 29, 72, 0.85)', // Rose
+                            borderRadius: 4
+                        },
+                        {
+                            label: 'Penggunaan Syphilis',
+                            data: gunaSyphilisValues,
+                            backgroundColor: 'rgba(79, 70, 229, 0.85)', // Indigo
+                            borderRadius: 4
+                        },
+                        {
+                            label: 'Baki HIV',
+                            data: bakiHIVValues,
+                            backgroundColor: 'rgba(251, 113, 133, 0.5)', // Light Rose
+                            borderColor: 'rgba(225, 29, 72, 1)',
+                            borderWidth: 1,
+                            borderRadius: 4
+                        },
+                        {
+                            label: 'Baki Syphilis',
+                            data: bakiSyphilisValues,
+                            backgroundColor: 'rgba(129, 140, 248, 0.5)', // Light Indigo
+                            borderColor: 'rgba(79, 70, 229, 1)',
+                            borderWidth: 1,
+                            borderRadius: 4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return ` ${context.dataset.label}: ${context.parsed.y.toLocaleString('ms-MY')} unit`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#f1f5f9' },
+                            ticks: { font: { size: 11 } }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { 
+                                font: { size: 10 },
+                                autoSkip: false,
+                                maxRotation: 45,
+                                minRotation: 0
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Populate Table Body
+        function renderTable() {
+            const tbody = document.getElementById('dataTableBody');
+            tbody.innerHTML = '';
+
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+            const rowsToDisplay = filteredData.filter(d => 
+                d.klinik.toLowerCase().includes(searchTerm) ||
+                d.kit.toLowerCase().includes(searchTerm) ||
+                d.bulan.toLowerCase().includes(searchTerm)
+            );
+
+            if (rowsToDisplay.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400 italic">Tiada rekod data ditemui.</td></tr>`;
+                document.getElementById('rowCountInfo').innerText = 'Menunjukkan 0 rekod';
+                return;
+            }
+
+            rowsToDisplay.forEach((d, idx) => {
+                let statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">Cukupan Stok</span>';
+                
+                if (d.baki === 0 && d.diterima > 0) {
+                    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-800">Kehabisan Stok</span>';
+                } else if (d.diterima > 0 && (d.baki / d.diterima) < 0.20) {
+                    statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Stok Kritikal (&lt;20%)</span>';
+                }
+
+                const tr = document.createElement('tr');
+                tr.className = idx % 2 === 0 ? 'bg-white hover:bg-slate-50' : 'bg-slate-50/50 hover:bg-slate-100/50';
+                tr.innerHTML = `
+                    <td class="py-3 px-4 font-medium text-slate-800">${d.klinik}</td>
+                    <td class="py-3 px-4">${d.kit}</td>
+                    <td class="py-3 px-4 text-slate-500">${d.bulan}</td>
+                    <td class="py-3 px-4 text-center font-semibold text-slate-700">${d.diterima.toLocaleString('ms-MY')}</td>
+                    <td class="py-3 px-4 text-center font-semibold text-amber-600">${d.guna.toLocaleString('ms-MY')}</td>
+                    <td class="py-3 px-4 text-center font-semibold text-emerald-600">${d.baki.toLocaleString('ms-MY')}</td>
+                    <td class="py-3 px-4 text-center">${statusBadge}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('rowCountInfo').innerText = `Menunjukkan ${rowsToDisplay.length} daripada ${filteredData.length} rekod`;
+        }
+
+        // Search Filter for Table
+        function searchTable() {
+            renderTable();
+        }
+    </script>
+</body>
+</html>
